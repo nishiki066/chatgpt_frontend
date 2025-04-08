@@ -1,17 +1,79 @@
 // src/chat/ChatPage.jsx
 import { useEffect, useState, useRef } from 'react';
-import api from '../api/api';
+import api, { getIsOffline, setNetworkStatusChangeListener, checkNetworkStatus } from '../api/api';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Button, Divider, IconButton, List, ListItem, ListItemText,
   Paper, TextField, Typography, CircularProgress, AppBar, Toolbar,
   Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText,
-  Tooltip, Alert
+  Tooltip, Alert, Snackbar
 } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import WifiOffIcon from '@mui/icons-material/WifiOff';
+
+// 离线状态组件
+const OfflineState = ({ onRetry }) => {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        bgcolor: '#f5f5f5'
+      }}
+    >
+      <Paper
+        elevation={3}
+        sx={{
+          p: 4,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          maxWidth: 500,
+          mx: 'auto'
+        }}
+      >
+        <WifiOffIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
+
+        <Typography variant="h5" gutterBottom align="center">
+          无法连接到服务器
+        </Typography>
+
+        <Typography variant="body1" color="text.secondary" align="center" sx={{ mb: 3 }}>
+          看起来网络连接出现了问题，无法连接到服务器。
+          可能是以下原因造成：
+        </Typography>
+
+        <Box sx={{ width: '100%', mb: 3 }}>
+          <Typography component="div" variant="body2">
+            • 服务器暂时不可用或正在维护
+          </Typography>
+          <Typography component="div" variant="body2">
+            • 您的网络连接出现问题
+          </Typography>
+          <Typography component="div" variant="body2">
+            • 您的防火墙或代理设置阻止了连接
+          </Typography>
+        </Box>
+
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={onRetry}
+          sx={{ mt: 2 }}
+        >
+          重试连接
+        </Button>
+      </Paper>
+    </Box>
+  );
+};
 
 export default function ChatPage() {
   const [sessions, setSessions] = useState([]);
@@ -28,6 +90,9 @@ export default function ChatPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [lastError, setLastError] = useState(null); // 用于记录最后一次错误，便于调试
+  const [isOffline, setIsOffline] = useState(getIsOffline());
+  const [retryCount, setRetryCount] = useState(0);
+  const [showRetrySnackbar, setShowRetrySnackbar] = useState(false);
 
   const navigate = useNavigate();
   const pollingRef = useRef(null);
@@ -43,6 +108,12 @@ export default function ChatPage() {
   const handleApiError = (error, errorMessage) => {
     console.error(errorMessage, error);
     setLastError(error); // 存储错误对象，便于调试
+
+    // 检查是否是网络错误
+    if (error.isNetworkError || error.code === 'ERR_NETWORK' || error.message?.includes('network')) {
+      setIsOffline(true);
+      return;
+    }
 
     // 检查是否是未授权错误(401)或者token相关错误
     if (error.response?.status === 401 ||
@@ -91,6 +162,32 @@ export default function ChatPage() {
     setTimeout(() => {
       setError('');
     }, 5000); // 增加到5秒，让用户有足够时间阅读
+  };
+
+  // 重试连接
+  const handleRetryConnection = async () => {
+    setRetryCount(prev => prev + 1);
+    setShowRetrySnackbar(true);
+
+    try {
+      const isOnline = await checkNetworkStatus();
+      setIsOffline(!isOnline);
+
+      if (isOnline) {
+        // 如果恢复连接，重新加载会话
+        await loadSessions();
+        setSuccessMessage('连接已恢复');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        // 仍然离线
+        setError('无法连接到服务器，请检查网络连接');
+      }
+    } catch (err) {
+      console.error('重试连接失败:', err);
+      setError('重试连接失败，请稍后再试');
+    } finally {
+      setShowRetrySnackbar(false);
+    }
   };
 
   const loadSessions = async () => {
@@ -296,6 +393,31 @@ export default function ChatPage() {
     };
   }, []);
 
+  // 设置网络状态监听
+  useEffect(() => {
+    // 设置网络状态变化监听器
+    setNetworkStatusChangeListener((offline) => {
+      setIsOffline(offline);
+
+      if (!offline) {
+        // 网络恢复时自动重新加载数据
+        loadSessions();
+        setSuccessMessage('网络连接已恢复');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    });
+
+    // 初始检查
+    checkNetworkStatus().then(online => {
+      setIsOffline(!online);
+    });
+
+    return () => {
+      // 清除监听器
+      setNetworkStatusChangeListener(null);
+    };
+  }, []);
+
   useEffect(() => {
     loadSessions();
   }, []);
@@ -305,6 +427,11 @@ export default function ChatPage() {
       loadMessages(currentSessionId);
     }
   }, [currentSessionId]);
+
+  // 如果处于离线状态，显示离线页面
+  if (isOffline) {
+    return <OfflineState onRetry={handleRetryConnection} />;
+  }
 
   return (
     <Box display="flex" height="100vh">
@@ -604,6 +731,17 @@ export default function ChatPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 重试连接提示 */}
+      <Snackbar
+        open={showRetrySnackbar}
+        message={
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <CircularProgress size={20} sx={{ mr: 1 }} color="inherit" />
+            <span>正在尝试重新连接服务器...</span>
+          </Box>
+        }
+      />
     </Box>
   );
 }
