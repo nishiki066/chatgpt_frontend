@@ -15,7 +15,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import WifiOffIcon from '@mui/icons-material/WifiOff';
 
-// 离线状态组件
+// 离线状态组件 - 当应用检测到网络连接问题时显示
 const OfflineState = ({ onRetry }) => {
   return (
     <Box
@@ -76,28 +76,29 @@ const OfflineState = ({ onRetry }) => {
 };
 
 export default function ChatPage() {
-  const [sessions, setSessions] = useState([]);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [sessionToDelete, setSessionToDelete] = useState(null);
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [newSessionName, setNewSessionName] = useState('');
-  const [sessionToRename, setSessionToRename] = useState(null);
-  const [error, setError] = useState('');
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [lastError, setLastError] = useState(null); // 用于记录最后一次错误，便于调试
-  const [isOffline, setIsOffline] = useState(getIsOffline());
-  const [retryCount, setRetryCount] = useState(0);
-  const [showRetrySnackbar, setShowRetrySnackbar] = useState(false);
+  // 状态变量
+  const [sessions, setSessions] = useState([]); // 会话列表
+  const [messages, setMessages] = useState([]); // 当前会话的消息列表
+  const [newMessage, setNewMessage] = useState(''); // 新消息输入
+  const [currentSessionId, setCurrentSessionId] = useState(null); // 当前选中的会话ID
+  const [loading, setLoading] = useState(false); // 加载状态
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // 删除确认对话框状态
+  const [sessionToDelete, setSessionToDelete] = useState(null); // 要删除的会话
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false); // 重命名对话框状态
+  const [newSessionName, setNewSessionName] = useState(''); // 新会话名称
+  const [sessionToRename, setSessionToRename] = useState(null); // 要重命名的会话
+  const [error, setError] = useState(''); // 错误信息
+  const [deleteLoading, setDeleteLoading] = useState(false); // 删除加载状态
+  const [successMessage, setSuccessMessage] = useState(''); // 成功消息
+  const [lastError, setLastError] = useState(null); // 最后一次错误，用于调试
+  const [isOffline, setIsOffline] = useState(getIsOffline()); // 离线状态
+  const [retryCount, setRetryCount] = useState(0); // 重试次数
+  const [showRetrySnackbar, setShowRetrySnackbar] = useState(false); // 显示重试提示
 
   const navigate = useNavigate();
-  const pollingRef = useRef(null);
-  const messagesEndRef = useRef(null);
-  const user_id = localStorage.getItem('user_id');
+  const pollingRef = useRef(null); // 用于存储轮询定时器引用
+  const messagesEndRef = useRef(null); // 用于自动滚动到底部
+  const user_id = localStorage.getItem('user_id'); // 从本地存储获取用户ID
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -161,7 +162,7 @@ export default function ChatPage() {
     // 5秒后自动清除错误信息
     setTimeout(() => {
       setError('');
-    }, 5000); // 增加到5秒，让用户有足够时间阅读
+    }, 5000);
   };
 
   // 重试连接
@@ -190,10 +191,13 @@ export default function ChatPage() {
     }
   };
 
+  // 加载会话列表
   const loadSessions = async () => {
     try {
-      const res = await api.get(`/session/${user_id}`);
+      const res = await api.get(`/session/user/${user_id}`);
       setSessions(res.data.sessions);
+
+      // 如果有会话但没有选中的会话，则选中第一个
       if (res.data.sessions.length > 0 && !currentSessionId) {
         setCurrentSessionId(res.data.sessions[0].id);
       }
@@ -202,11 +206,12 @@ export default function ChatPage() {
     }
   };
 
+  // 加载指定会话的消息
   const loadMessages = async (sessionId) => {
     try {
       const res = await api.get(`/message/${sessionId}`);
       setMessages(res.data.messages);
-      setTimeout(scrollToBottom, 100);
+      setTimeout(scrollToBottom, 100); // 加载完消息后滚动到底部
     } catch (error) {
       handleApiError(error, '加载消息失败');
     }
@@ -216,16 +221,16 @@ export default function ChatPage() {
   const createSession = async () => {
     try {
       const res = await api.post('/session/create', { title: '新会话' });
-      await loadSessions();
-      setCurrentSessionId(res.data.session_id);
+      await loadSessions(); // 重新加载会话列表
+      setCurrentSessionId(res.data.session_id); // 选中新创建的会话
     } catch (error) {
       handleApiError(error, '创建会话失败');
     }
   };
 
-  // 删除会话对话框
+  // 打开删除会话确认对话框
   const openDeleteDialog = (session, event) => {
-    event.stopPropagation();
+    event.stopPropagation(); // 阻止事件冒泡，避免同时触发选中会话
     setSessionToDelete(session);
     setDeleteDialogOpen(true);
   };
@@ -252,7 +257,7 @@ export default function ChatPage() {
       setSuccessMessage('会话删除成功');
       setTimeout(() => setSuccessMessage(''), 3000);
 
-      await loadSessions();
+      await loadSessions(); // 重新加载会话列表
       setDeleteDialogOpen(false);
     } catch (error) {
       // 使用增强的错误处理
@@ -270,54 +275,63 @@ export default function ChatPage() {
 
   // 打开重命名对话框
   const openRenameDialog = (session, event) => {
-    event.stopPropagation();
+    event.stopPropagation(); // 阻止事件冒泡
     setSessionToRename(session);
-    setNewSessionName(session.title);
+    setNewSessionName(session.title); // 设置当前标题为初始值
     setRenameDialogOpen(true);
   };
 
   // 确认重命名会话
   const confirmRenameSession = async () => {
     try {
+      // 调用后端API更新会话标题
       await api.patch(`/session/${sessionToRename.id}`, {
         title: newSessionName
       });
-      await loadSessions();
+      await loadSessions(); // 重新加载会话列表以获取更新后的标题
       setRenameDialogOpen(false);
+
+      // 显示成功消息
+      setSuccessMessage('会话重命名成功');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (error) {
       handleApiError(error, '重命名会话失败');
       setRenameDialogOpen(false); // 关闭对话框，即使发生错误
     }
   };
 
-  // 自动生成会话名称
-  const generateSessionName = async (content, sessionId) => {
-    if (!content || content.trim().length < 3) return;
-
-    // 如果内容超过20个字符，只取前20个字符作为会话名称
-    let name = content.trim();
-    if (name.length > 20) {
-      name = name.substring(0, 20) + '...';
-    }
-
+  // 智能生成会话标题
+  const generateSessionName = async (sessionId) => {
     try {
-      await api.patch(`/session/${sessionId}`, { title: name });
-      await loadSessions();
+      setLoading(true); // 设置加载状态
+
+      // 调用新的API生成会话标题
+      await api.post(`/session/${sessionId}/generate-title`);
+      await loadSessions(); // 重新加载会话列表以获取新标题
+
+      // 显示成功消息
+      setSuccessMessage('会话标题已智能生成');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (error) {
-      handleApiError(error, '自动命名会话失败');
+      handleApiError(error, '自动生成会话标题失败');
+    } finally {
+      setLoading(false); // 重置加载状态
     }
   };
 
+  // 发送消息
   const sendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim()) return; // 不发送空消息
 
     try {
+      // 发送消息到后端
       const res = await api.post('/message/send', {
         session_id: currentSessionId,
         content: newMessage,
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-3.5-turbo', // 指定使用的模型
       });
 
+      // 创建新消息对象并添加到消息列表
       const newMsg = {
         id: res.data.message_id,
         content: newMessage,
@@ -326,21 +340,29 @@ export default function ChatPage() {
       };
 
       setMessages(prev => [...prev, newMsg]);
-      setNewMessage('');
+      setNewMessage(''); // 清空输入框
 
-      // 如果是会话中的第一条消息，自动生成会话名称
+      // 判断是否应该生成标题
       const isFirstMessage = messages.length === 0;
-      if (isFirstMessage) {
-        generateSessionName(newMessage, currentSessionId);
+      const shouldGenerateTitle = isFirstMessage ||
+        (messages.length > 0 && messages.length % 5 === 0); // 每发送5条消息尝试更新一次标题
+
+      if (shouldGenerateTitle) {
+        // 延迟一点生成标题，确保先把用户消息发送出去并显示
+        setTimeout(() => {
+          generateSessionName(currentSessionId);
+        }, 500);
       }
 
+      // 开始轮询获取AI响应
       streamMessageUpdates(res.data.message_id);
-      setTimeout(scrollToBottom, 100);
+      setTimeout(scrollToBottom, 100); // 滚动到底部
     } catch (error) {
       handleApiError(error, '发送消息失败');
     }
   };
 
+  // 轮询获取消息更新（用于流式返回AI回复）
   const streamMessageUpdates = (lastUserMessageId) => {
     setLoading(true);
     let lastMessageId = null;
@@ -350,23 +372,28 @@ export default function ChatPage() {
       clearInterval(pollingRef.current);
     }
 
+    // 设置轮询间隔为1秒
     pollingRef.current = setInterval(async () => {
       try {
+        // 获取新消息
         const res = await api.get(`/message/${currentSessionId}/updates?last_message_id=${lastUserMessageId}`);
         const newMsgs = res.data.messages;
 
         if (newMsgs.length > 0) {
           newMsgs.forEach((m) => {
             if (!lastMessageId) {
+              // 第一条新消息，直接添加到列表中
               lastMessageId = m.id;
               setMessages(prev => [...prev, m]);
             } else {
+              // 已有消息，更新内容（用于流式响应）
               setMessages(prev => prev.map(msg =>
                 msg.id === m.id ? { ...msg, content: (msg.content || '') + m.content, status: m.status } : msg
               ));
             }
           });
 
+          // 检查最后一条消息的状态，如果已完成则停止轮询
           const lastStatus = newMsgs[newMsgs.length - 1].status;
           if (lastStatus === 'completed') {
             clearInterval(pollingRef.current);
@@ -384,7 +411,7 @@ export default function ChatPage() {
     }, 1000);
   };
 
-  // 清理轮询
+  // 组件卸载时清理轮询定时器
   useEffect(() => {
     return () => {
       if (pollingRef.current) {
@@ -407,7 +434,7 @@ export default function ChatPage() {
       }
     });
 
-    // 初始检查
+    // 初始检查网络状态
     checkNetworkStatus().then(online => {
       setIsOffline(!online);
     });
@@ -418,10 +445,12 @@ export default function ChatPage() {
     };
   }, []);
 
+  // 首次加载会话列表
   useEffect(() => {
     loadSessions();
   }, []);
 
+  // 当选中的会话ID变化时，加载该会话的消息
   useEffect(() => {
     if (currentSessionId) {
       loadMessages(currentSessionId);
@@ -435,7 +464,7 @@ export default function ChatPage() {
 
   return (
     <Box display="flex" height="100vh">
-      {/* 侧边栏 */}
+      {/* 侧边栏 - 会话列表 */}
       <Paper elevation={3} sx={{ width: 260, display: 'flex', flexDirection: 'column' }}>
         <Box p={2} display="flex" justifyContent="space-between" alignItems="center" bgcolor="primary.main" color="white">
           <Typography variant="h6">会话列表</Typography>
@@ -520,6 +549,7 @@ export default function ChatPage() {
 
       {/* 聊天区域 */}
       <Box flex={1} display="flex" flexDirection="column">
+        {/* 顶部标题栏 */}
         <AppBar position="static">
           <Toolbar>
             <Typography variant="h6" sx={{ flexGrow: 1 }}>
@@ -527,6 +557,18 @@ export default function ChatPage() {
                 ? sessions.find(s => s.id === currentSessionId)?.title || '聊天'
                 : '请选择或创建会话'}
             </Typography>
+            {/* 添加智能生成标题按钮 */}
+            {currentSessionId && messages.length > 0 && (
+              <Tooltip title="智能生成标题">
+                <IconButton
+                  color="inherit"
+                  onClick={() => generateSessionName(currentSessionId)}
+                  disabled={loading}
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </Tooltip>
+            )}
           </Toolbar>
         </AppBar>
 
@@ -581,6 +623,7 @@ export default function ChatPage() {
         >
           {currentSessionId ? (
             messages.length === 0 ? (
+              // 空会话提示
               <Box
                 height="100%"
                 display="flex"
@@ -596,6 +639,7 @@ export default function ChatPage() {
                 </Typography>
               </Box>
             ) : (
+              // 消息列表
               messages.map(m => (
                 <Box
                   key={m.id}
@@ -622,6 +666,7 @@ export default function ChatPage() {
               ))
             )
           ) : (
+            // 未选择会话提示
             <Box
               height="100%"
               display="flex"
@@ -635,6 +680,7 @@ export default function ChatPage() {
             </Box>
           )}
 
+          {/* AI思考中状态显示 */}
           {loading && (
             <Box display="flex" justifyContent="flex-start" mt={2}>
               <Box
@@ -652,7 +698,7 @@ export default function ChatPage() {
             </Box>
           )}
 
-          {/* 用于自动滚动的参考元素 */}
+          {/* 用于自动滚动到底部的参考元素 */}
           <div ref={messagesEndRef} />
         </Box>
 
